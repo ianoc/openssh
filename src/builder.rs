@@ -83,6 +83,7 @@ pub struct SessionBuilder {
     keyfile: Option<PathBuf>,
     connect_timeout: Option<String>,
     server_alive_interval: Option<u64>,
+    control_persist_timeout: Option<u64>,
     known_hosts_check: KnownHosts,
     control_dir: Option<PathBuf>,
     clean_history_control_dir: bool,
@@ -101,6 +102,7 @@ impl Default for SessionBuilder {
             keyfile: None,
             connect_timeout: None,
             server_alive_interval: None,
+            control_persist_timeout: None,
             known_hosts_check: KnownHosts::Add,
             control_dir: None,
             clean_history_control_dir: false,
@@ -172,6 +174,16 @@ impl SessionBuilder {
     /// Defaults to `None`.
     pub fn server_alive_interval(&mut self, d: std::time::Duration) -> &mut Self {
         self.server_alive_interval = Some(d.as_secs());
+        self
+    }
+
+    /// Sets a timeout after which if no connections are open the control socket will be closed.
+    /// The socket will remain open the max(timeout, last remaining connection is open).
+    /// This value is specified in seconds. Any sub-second duration remainder will be ignored.
+    /// Defaults to `None`, which we will use `ControlPersist=yes` in `ssh`,
+    /// which means the control socket will remain open indefinitely.
+    pub fn control_persist_timeout(&mut self, d: std::time::Duration) -> &mut Self {
+        self.control_persist_timeout = Some(d.as_secs());
         self
     }
 
@@ -405,7 +417,6 @@ impl SessionBuilder {
             .arg("-f")
             .arg("-N")
             .arg("-o")
-            .arg("ControlPersist=yes")
             .arg("-o")
             .arg("BatchMode=yes")
             .arg("-o")
@@ -413,6 +424,12 @@ impl SessionBuilder {
 
         if let Some(ref timeout) = self.connect_timeout {
             init.arg("-o").arg(format!("ConnectTimeout={}", timeout));
+        }
+
+        if let Some(ref interval) = self.control_persist_timeout {
+            init.arg("-o").arg(format!("ControlPersist={}", interval));
+        } else {
+            init.arg("-o").arg("ControlPersist=yes");
         }
 
         if let Some(ref interval) = self.server_alive_interval {
